@@ -7,6 +7,7 @@
 #include <getopt.h>
 #include "usage.txt.h"
 #include "synopsis.txt.h"
+#include "version.h"
 
 struct config cfg;
 
@@ -49,8 +50,11 @@ config_init(int argc, char **argv)
 		}
 	}
 
-	if (cfg.config_fname == NULL)
+	if (cfg.config_fname == NULL) {
+		if (show_config)
+			config_dump();
 		errx(1, "no config file specified");
+	}
 
 	f = fopen(cfg.config_fname, "rt");
 	if (f == NULL)
@@ -94,12 +98,10 @@ config_init(int argc, char **argv)
 		}
 
 		if (curr_section == SECTION_IMAP) {
-			if (strcmp("host", key) == 0) {
-				cfg.imap.host = strdup(value);
-			} else if (strcmp("folder", key) == 0) {
-				cfg.imap.folder = strdup(value);
-			} else if (strcmp("user", key) == 0) {
-				cfg.imap.user = strdup(value);
+			if (strcmp("url", key) == 0) {
+				cfg.imap.url = strdup(value);
+			} else if (strcmp("login", key) == 0) {
+				cfg.imap.login = strdup(value);
 			} else if (strcmp("password", key) == 0) {
 				cfg.imap.password = strdup(value);
 			} else {
@@ -125,14 +127,12 @@ config_dump()
 {
 	printf(
 		"[imap]\n"
-		"host = %s\n"
-		"folder = %s\n"
-		"user = %s\n"
+		"url = %s\n"
+		"login = %s\n"
 		"password = %s\n",
-		cfg.imap.host,
-		cfg.imap.folder,
-		cfg.imap.user,
-		cfg.imap.password,
+		cfg.imap.url,
+		cfg.imap.login,
+		cfg.imap.password
 		);
 }
 

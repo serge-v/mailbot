@@ -6,9 +6,8 @@ struct config
 
 	struct
 	{
-		const char *host;
-		const char *folder;
-		const char *user;
+		const char *url;
+		const char *login;
 		const char *password;
 	} imap;
 };

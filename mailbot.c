@@ -12,9 +12,6 @@
 #include "common/log.h"
 #include "conf.h"
 
-static const char inbox_url[] = "imaps://imap.gmail.com:993/INBOX";
-static const char username[] = "serge0x76@gmail.com";
-static const char pwd_rel_fname[] = ".config/departures/smtp.txt";
 static CURL *curl;
 static FILE *fnull;
 static int verbose = 0;
@@ -35,6 +32,7 @@ static struct mail_filter purge_filters[] = {
 	{ 2, "from:updates@ce.homeadvisor.com" },
 	{ 2, "from:notifications@github.com" },
 	{ 2, "to:serge0x76+weather@gmail.com" },
+	{ 2, "label:bank/citi" },
 	{ 0, NULL }
 };
 
@@ -46,7 +44,7 @@ get_password(char *s, int len)
 {
 	char fname[100];
 
-	snprintf(fname, 99, "%s/%s", getenv("HOME"), pwd_rel_fname);
+	snprintf(fname, 99, "%s/%s", getenv("HOME"), cfg.imap.password);
 
 	FILE *f = fopen(fname, "rt");
 	if (f == NULL)
@@ -81,8 +79,7 @@ init_curl()
 
 	get_password(password, 100);
 
-	curl_easy_setopt(curl, CURLOPT_URL, inbox_url);
-	curl_easy_setopt(curl, CURLOPT_USERNAME, username);
+	curl_easy_setopt(curl, CURLOPT_USERNAME, cfg.imap.login);
 	curl_easy_setopt(curl, CURLOPT_PASSWORD, password);
 	curl_easy_setopt(curl, CURLOPT_USE_SSL, (long)CURLUSESSL_ALL);
 	
@@ -96,6 +93,7 @@ load_folder_list()
 {
 	CURLcode res = CURLE_OK;
 	FILE *f = fopen("list~.txt", "wb");
+	curl_easy_setopt(curl, CURLOPT_URL, cfg.imap.url);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, verbose);
 	res = curl_easy_perform(curl);
@@ -113,8 +111,10 @@ search(const char *gmail_filter)
 	char cmd[100];
 	CURLcode res = CURLE_OK;
 	FILE *f = fopen("search~.txt", "wb");
+
 	snprintf(cmd, 99, "SEARCH X-GM-RAW \"%s\"", gmail_filter);
 
+	curl_easy_setopt(curl, CURLOPT_URL, cfg.imap.url);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
 	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, cmd);
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, verbose);
@@ -143,7 +143,7 @@ fetch(uint64_t uid)
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, verbose);
 
-	sprintf(url, "%s;UID=%" PRIu64, inbox_url, uid);
+	sprintf(url, "%s;UID=%" PRIu64, cfg.imap.url, uid);
 	curl_easy_setopt(curl, CURLOPT_URL, url);
 	
 	res = curl_easy_perform(curl);
@@ -161,8 +161,7 @@ delete(uint64_t uid)
 	char cmd[100];
 	char fname[100];
 
-	curl_easy_setopt(curl, CURLOPT_URL, inbox_url);
-	curl_easy_setopt(curl, CURLOPT_VERBOSE, 0L);
+	curl_easy_setopt(curl, CURLOPT_URL, cfg.imap.url);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, fnull);
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, verbose);
 
@@ -193,11 +192,11 @@ delete_found_uids()
 		delete(uid);
 		int ret = fscanf(f, "%llu", &uid);
 		count++;
-		if (ret != 1 || count >= 100)
+		if (ret != 1 || count >= 1000)
 			break;
 	}
 	fclose(f);
-	
+
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, fnull);
 	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "EXPUNGE");
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, verbose);
@@ -242,10 +241,12 @@ int main(int argc, char **argv)
 
 	snprintf(log_fname, PATH_MAX, "%s/.local/mailbot/mailbot.log", getenv("HOME"));
 	log_open(log_fname);
-
+	
+	logi("processing for mailbox: %s, user: %s", cfg.imap.url, cfg.imap.login);
 	init_curl();
 	purge();
 	curl_easy_cleanup(curl);
+	logi("done");
 	log_close();
 
 	return 0;
