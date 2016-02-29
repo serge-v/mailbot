@@ -1,3 +1,10 @@
+struct filter
+{
+	int days_before;          /* Apply to messages older than (now - days_before) */
+	const char *gmail_filter; /* Gmail X-GM-RAW filter format (Google imap extension) */
+	struct filter *next;
+};
+
 struct config
 {
 	const char *config_fname;
@@ -10,6 +17,8 @@ struct config
 		const char *login;
 		const char *password;
 	} imap;
+	
+	struct filter *purge_filters;
 };
 
 extern struct config cfg;

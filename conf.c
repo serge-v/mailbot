@@ -11,17 +11,36 @@
 
 struct config cfg;
 
+static void
+add_filter(char* f)
+{
+	char *s = strtok(f, ",");
+	int days = atoi(s);
+	if (days <= 0)
+		err(1, "invalid filter: %s", f);
+
+	s = strtok(NULL, ",");
+
+	struct filter *fn = calloc(1, sizeof(struct filter));
+
+	fn->days_before = days;
+	fn->gmail_filter = strdup(s);
+	fn->next = cfg.purge_filters;
+	cfg.purge_filters = fn;
+}
+
 enum section
 {
 	SECTION_NONE,
-	SECTION_IMAP
+	SECTION_IMAP,
+	SECTION_PURGE_FILTERS
 };
 
 int
 config_init(int argc, char **argv)
 {
 	FILE *f;
-	char *ptr, s[200], key[100], value[100];
+	char *ptr, s[200], *key, *value;
 	enum section curr_section = SECTION_NONE;
 	int ch, n, line = 0;
 	bool show_config = false;
@@ -74,6 +93,9 @@ config_init(int argc, char **argv)
 		if (strcmp("[imap]", s) == 0) {
 			curr_section = SECTION_IMAP;
 			continue;
+		} else if (strcmp("[purge_filters]", s) == 0) {
+			curr_section = SECTION_PURGE_FILTERS;
+			continue;
 		}
 
 		if (strstr(s, "=") == NULL) {
@@ -83,19 +105,15 @@ config_init(int argc, char **argv)
 				cfg.config_fname, line, s);
 		}
 
-		if (strstr(s, " = ") == NULL)
+		ptr = strstr(s, " = ");
+
+		if (ptr == NULL)
 			errx(1, "%s:%d: error: spaces are required before and after equal sign: %s", cfg.config_fname, line, s);
 
-		n = sscanf(s, "%s = %s\n", key, value);
-		if (n == -1)
-			continue;
-
-		if (n != 2) {
-			errx(1,
-				"%s:%d: error: invalid format: %s. Should be: key = value"
-				"(spaces are required before and after equal sign).",
-				cfg.config_fname, line, s);
-		}
+		key = s;
+		*ptr = 0;
+		ptr += 3;
+		value = ptr;
 
 		if (curr_section == SECTION_IMAP) {
 			if (strcmp("url", key) == 0) {
@@ -104,6 +122,12 @@ config_init(int argc, char **argv)
 				cfg.imap.login = strdup(value);
 			} else if (strcmp("password", key) == 0) {
 				cfg.imap.password = strdup(value);
+			} else {
+				errx(1, "%s:%d: error: unknown parameter: %s", cfg.config_fname, line, s);
+			}
+		} else if (curr_section == SECTION_PURGE_FILTERS) {
+			if (strcmp("filter", key) == 0) {
+				add_filter(value);
 			} else {
 				errx(1, "%s:%d: error: unknown parameter: %s", cfg.config_fname, line, s);
 			}
@@ -134,6 +158,17 @@ config_dump()
 		cfg.imap.login,
 		cfg.imap.password
 		);
+
+	printf("\n[purge_filters]\n");
+
+	for (struct filter *f = cfg.purge_filters; f != NULL; f = f->next) {
+		printf("filter = %d,%s\n", f->days_before, f->gmail_filter);
+	}
+}
+
+void
+config_free()
+{
 }
 
 

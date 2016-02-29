@@ -16,26 +16,6 @@ static CURL *curl;
 static FILE *fnull;
 static int verbose = 0;
 
-struct mail_filter
-{
-	int days_before;          /* Apply to messages older than (now - days_before) */
-	const char *gmail_filter; /* Gmail X-GM-RAW filter format (Google imap extension) */
-};
-
-static struct mail_filter purge_filters[] = {
-	{ 2, "from:bugzilla-noreply@freebsd.org" },
-	{ 2, "bcc:serge0x76+cam@gmail.com" },
-	{ 2, "Digest for concurrencykit" },
-	{ 2, "to:freebsd-arm@freebsd.org" },
-	{ 2, "to:freebsd-wireless@freebsd.org" },
-	{ 2, "from:jenkins@appnexus.com" },
-	{ 2, "from:updates@ce.homeadvisor.com" },
-	{ 2, "from:notifications@github.com" },
-	{ 2, "to:serge0x76+weather@gmail.com" },
-	{ 2, "label:bank/citi" },
-	{ 0, NULL }
-};
-
 #define MAX_RESULTS 1000
 static uint64_t uids[MAX_RESULTS];
 
@@ -172,8 +152,6 @@ delete(uint64_t uid)
 
 	if (res != CURLE_OK)
 		logfatal("curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
-	
-	logi("deleted: %" PRIu64, uid);
 }
 
 static int
@@ -190,8 +168,9 @@ delete_found_uids()
 
 	while (uid > 0) {
 		delete(uid);
-		int ret = fscanf(f, "%llu", &uid);
 		count++;
+		logi("deleted: %d, %" PRIu64, count, uid);
+		int ret = fscanf(f, "%llu", &uid);
 		if (ret != 1 || count >= 1000)
 			break;
 	}
@@ -209,26 +188,25 @@ delete_found_uids()
 }
 
 static void
-delete_filtered(const struct mail_filter *filter)
+delete_filtered(const struct filter *filter)
 {
 	char gmail_filter[100];
 	char timestamp[20];
 
 	get_timestamp(timestamp, 19, filter->days_before);
 	snprintf(gmail_filter, 99, "before:%s %s", timestamp, filter->gmail_filter);	
+	logi("purging: \"%s\"", gmail_filter);
 
 	search(gmail_filter);
 	int count = delete_found_uids();
-	logi("purged for filter: \"%s\": %d", gmail_filter, count);
+	logi("purged: %d", count);
 }
 
 static void
 purge()
 {
-	struct mail_filter *filter = purge_filters;
-	while (filter->days_before != 0) {
-		delete_filtered(filter);
-		filter++;
+	for (struct filter *f = cfg.purge_filters; f != NULL; f = f->next) {
+		delete_filtered(f);
 	}
 }
 
