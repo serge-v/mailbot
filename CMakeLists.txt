@@ -21,8 +21,19 @@ set(
 
 generate_resources("${RESOURCES}" GENERATED)
 
-add_executable(mailbot mailbot.c conf.c version.c ${GENERATED})
-target_link_libraries(mailbot ${curl_LIBRARY} svc)
+add_executable(
+	mailbot
+	mailbot.c
+	conf.c
+	version.c
+	${GENERATED}
+)
+
+target_link_libraries(
+	mailbot
+	${curl_LIBRARY}
+	svc
+)
 
 list(APPEND CURLTEST_SRC
 #	curltest/imap-append.c

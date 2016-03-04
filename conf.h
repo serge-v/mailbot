@@ -2,13 +2,17 @@ struct filter
 {
 	int days_before;          /* Apply to messages older than (now - days_before) */
 	const char *gmail_filter; /* Gmail X-GM-RAW filter format (Google imap extension) */
+	const char *parser_name;
 	struct filter *next;
 };
 
 struct config
 {
 	const char *config_fname;
-	const char *log_fname;
+	char *name;              /* ini base name without extension */
+	char *log_fname;         /* log file name in ~/.local dir */
+	char *local_dir;         /* mailbox local storage dir ~/.local/mailbot/<name> */
+	char *uids_fname;        /* file with found uids for a mailbox */
 	int debug;
 
 	struct
@@ -19,6 +23,7 @@ struct config
 	} imap;
 	
 	struct filter *purge_filters;
+	struct filter *summarize_filters;
 };
 
 extern struct config cfg;

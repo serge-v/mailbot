@@ -5,14 +5,17 @@
 #include <string.h>
 #include <err.h>
 #include <getopt.h>
+#include <limits.h>
+#include <sys/stat.h>
 #include "usage.txt.h"
 #include "synopsis.txt.h"
 #include "version.h"
+#include "common/fs.h"
 
 struct config cfg;
 
-static void
-add_filter(char* f)
+static struct filter *
+add_filter(struct filter *list, char* f)
 {
 	char *s = strtok(f, ",");
 	int days = atoi(s);
@@ -25,16 +28,96 @@ add_filter(char* f)
 
 	fn->days_before = days;
 	fn->gmail_filter = strdup(s);
-	fn->next = cfg.purge_filters;
-	cfg.purge_filters = fn;
+	fn->next = list;
+	list = fn;
+
+	return list;
+}
+
+static struct filter *
+reverse_filter(struct filter *list)
+{
+	struct filter *prev = NULL;
+	struct filter *curr = list;
+
+	while (curr != NULL) {
+		struct filter *next = curr->next;
+		curr->next = prev;
+		prev = curr;
+		curr = next;
+	}
+
+	return prev;
 }
 
 enum section
 {
 	SECTION_NONE,
 	SECTION_IMAP,
-	SECTION_PURGE_FILTERS
+	SECTION_PURGE_FILTERS,
+	SECTION_SUMMARIZE_FILTERS
 };
+
+static enum section
+parse_section_name(const char *s)
+{
+	if (strcmp("[imap]", s) == 0)
+		return SECTION_IMAP;
+	else if (strcmp("[purge]", s) == 0)
+		return SECTION_PURGE_FILTERS;
+	else if (strcmp("[summarize]", s) == 0)
+		return SECTION_SUMMARIZE_FILTERS;
+	else
+		err(1, "invalid section name: %s", s);
+}
+
+static void
+cut_kv(int line, char *s, char **key, char **value)
+{
+	if (strstr(s, "=") == NULL)
+		errx(1,
+			"%s:%d: error: invalid format: %s. Should be: key = value"
+			" (spaces are required before and after equal sign).",
+			cfg.config_fname, line, s);
+
+	char *ptr = strstr(s, " = ");
+
+	if (ptr == NULL)
+		errx(1, "%s:%d: error: spaces are required before and after equal sign: %s",
+			cfg.config_fname, line, s);
+
+	*key = s;
+	*ptr = 0;
+	ptr += 3;
+	*value = ptr;
+}
+
+static void
+ensure_dir(const char *path)
+{
+	if (exists(path))
+		return;
+
+	int rc = mkdir(path, 0700);
+
+	if (rc != 0)
+		err(1, "cannot create local dir %s", path);
+}
+
+static void
+ensure_local_dir()
+{
+	char path[PATH_MAX];
+
+	strcpy(path, getenv("HOME"));
+	strcat(path, "/.local");
+	ensure_dir(path);
+	strcat(path, "/mailbot");
+	ensure_dir(path);
+	strcat(path, "/");
+	strcat(path, cfg.name);
+	ensure_dir(path);
+}
 
 int
 config_init(int argc, char **argv)
@@ -42,7 +125,7 @@ config_init(int argc, char **argv)
 	FILE *f;
 	char *ptr, s[200], *key, *value;
 	enum section curr_section = SECTION_NONE;
-	int ch, n, line = 0;
+	int ch, line = 0;
 	bool show_config = false;
 
 	while ((ch = getopt(argc, argv, "dhvgc:s")) != -1) {
@@ -90,30 +173,12 @@ config_init(int argc, char **argv)
 		if (s[0] == 0 || s[0] == '#')
 			continue;
 
-		if (strcmp("[imap]", s) == 0) {
-			curr_section = SECTION_IMAP;
-			continue;
-		} else if (strcmp("[purge_filters]", s) == 0) {
-			curr_section = SECTION_PURGE_FILTERS;
+		if (s[0] == '[') {
+			curr_section = parse_section_name(s);
 			continue;
 		}
 
-		if (strstr(s, "=") == NULL) {
-			errx(1,
-				"%s:%d: error: invalid format: %s. Should be: key = value"
-				" (spaces are required before and after equal sign).",
-				cfg.config_fname, line, s);
-		}
-
-		ptr = strstr(s, " = ");
-
-		if (ptr == NULL)
-			errx(1, "%s:%d: error: spaces are required before and after equal sign: %s", cfg.config_fname, line, s);
-
-		key = s;
-		*ptr = 0;
-		ptr += 3;
-		value = ptr;
+		cut_kv(line, s, &key, &value);
 
 		if (curr_section == SECTION_IMAP) {
 			if (strcmp("url", key) == 0) {
@@ -127,7 +192,13 @@ config_init(int argc, char **argv)
 			}
 		} else if (curr_section == SECTION_PURGE_FILTERS) {
 			if (strcmp("filter", key) == 0) {
-				add_filter(value);
+				cfg.purge_filters = add_filter(cfg.purge_filters, value);
+			} else {
+				errx(1, "%s:%d: error: unknown parameter: %s", cfg.config_fname, line, s);
+			}
+		} else if (curr_section == SECTION_SUMMARIZE_FILTERS) {
+			if (strcmp("filter", key) == 0) {
+				cfg.summarize_filters = add_filter(cfg.summarize_filters, value);
 			} else {
 				errx(1, "%s:%d: error: unknown parameter: %s", cfg.config_fname, line, s);
 			}
@@ -137,6 +208,27 @@ config_init(int argc, char **argv)
 	}
 
 	fclose(f);
+	cfg.purge_filters = reverse_filter(cfg.purge_filters);
+	cfg.summarize_filters = reverse_filter(cfg.summarize_filters);
+
+	const char *start = strrchr(cfg.config_fname, '/');
+	if (start == NULL)
+		start = cfg.config_fname;
+
+	const char *end = strrchr(cfg.config_fname, '.');
+	if (end == NULL)
+		end = cfg.config_fname + strlen(cfg.config_fname);
+
+	if (end <= start)
+		errx(1, "invalid config file name");
+
+	int len = end - start - 1;
+	asprintf(&cfg.name, "%.*s", len, start + 1);
+	asprintf(&cfg.local_dir, "%s/.local/mailbot/%s", getenv("HOME"), cfg.name);
+	asprintf(&cfg.log_fname, "%s/.local/mailbot/mailbot.log", getenv("HOME"));
+	asprintf(&cfg.uids_fname, "%s/uids.txt", cfg.local_dir);
+
+	ensure_local_dir();
 
 	if (show_config) {
 		config_dump();
@@ -149,6 +241,18 @@ config_init(int argc, char **argv)
 void
 config_dump()
 {
+	printf("[internal]\n"
+	       "name = %s\n"
+	       "config_fname = %s\n"
+	       "log_fname = %s\n"
+	       "local_dir = %s\n"
+	       "\n",
+	       cfg.name,
+	       cfg.config_fname,
+	       cfg.log_fname,
+	       cfg.local_dir
+	);
+
 	printf(
 		"[imap]\n"
 		"url = %s\n"
@@ -159,9 +263,13 @@ config_dump()
 		cfg.imap.password
 		);
 
-	printf("\n[purge_filters]\n");
-
+	printf("\n[purge]\n");
 	for (struct filter *f = cfg.purge_filters; f != NULL; f = f->next) {
+		printf("filter = %d,%s\n", f->days_before, f->gmail_filter);
+	}
+
+	printf("\n[summarize]\n");
+	for (struct filter *f = cfg.summarize_filters; f != NULL; f = f->next) {
 		printf("filter = %d,%s\n", f->days_before, f->gmail_filter);
 	}
 }
