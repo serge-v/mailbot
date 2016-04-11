@@ -225,10 +225,10 @@ load_ids(const char *fname, int **seqnums, int **uids, int *count)
 
 		int ret = sscanf(s, "* %d FETCH (UID %d)", &seqnum, &uid);
 		if (ret != 2)
-			logfatal(1, "invalid file %s", fname);
+			logfatal("invalid file %s", fname);
 
 		if (seqnum == 0 || uid == 0)
-			logfatal(1, "invalid seqnum or uid %s", fname);
+			logfatal("invalid seqnum or uid %s", fname);
 
 		if (cnt >= cap) {
 			cap += 100;
@@ -266,6 +266,7 @@ search(const char *query)
 	curl_easy_setopt(curl, CURLOPT_URL, cfg.imap.url);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
 	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, cmd);
+	curl_easy_setopt(curl, CURLOPT_VERBOSE, cfg.debug);
 
 	res = curl_easy_perform(curl);
 
