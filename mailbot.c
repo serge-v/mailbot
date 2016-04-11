@@ -9,329 +9,16 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-#include <inttypes.h>
-#include <regex.h>
-#include <curl/curl.h>
+#include <limits.h>
+#include <search.h>
+#include <ctype.h>
 #include "common/log.h"
 #include "common/struct.h"
 #include "common/regexp.h"
 #include "common/fs.h"
-#include "common/net.h"
 #include "conf.h"
-
-static CURL *curl;
-static FILE *fnull;
-static int verbose = 1;
-static bool offline = false;
-
-static void
-get_password(char *s, int len)
-{
-	char fname[100];
-
-	snprintf(fname, 99, "%s/%s", getenv("HOME"), cfg.imap.password);
-
-	FILE *f = fopen(fname, "rt");
-	if (f == NULL)
-		logfatal("cannot open password file %s", fname);
-
-	size_t was_read = fread(s, 1, len - 1, f);
-
-	fclose(f);
-
-	if (was_read == 0)
-		logfatal("password is empty in file %s", fname); 
-
-	s[was_read] = 0;
-}
-
-static void
-get_timestamp(char *ts, size_t len, int days_ago)
-{
-	time_t now = time(NULL) - days_ago * 24 * 3600;
-	struct tm *tm = gmtime(&now);
-	strftime(ts, len - 1, "%Y-%m-%d", tm);
-}
-
-static void
-init_curl()
-{
-	char password[100];
-
-	curl = curl_easy_init();
-	if (curl == NULL)
-		logfatal("cannot init curl");
-
-	get_password(password, 100);
-
-	curl_easy_setopt(curl, CURLOPT_USERNAME, cfg.imap.login);
-	curl_easy_setopt(curl, CURLOPT_PASSWORD, password);
-	curl_easy_setopt(curl, CURLOPT_USE_SSL, (long)CURLUSESSL_ALL);
-	
-	fnull = fopen("/dev/null", "wb");
-	if (fnull == NULL)
-		logfatal("cannot open /dev/null");
-}
-
-static void
-load_folder_list()
-{
-	CURLcode res = CURLE_OK;
-	FILE *f = fopen("list~.txt", "wb");
-	curl_easy_setopt(curl, CURLOPT_URL, cfg.imap.url);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
-	curl_easy_setopt(curl, CURLOPT_VERBOSE, verbose);
-	res = curl_easy_perform(curl);
-
-	if (res != CURLE_OK)
-		logfatal("curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
-
-	fclose(f);
-	printf("folder list loaded\n");
-}
-
-static void
-search(const char *gmail_filter)
-{
-	char cmd[100];
-	CURLcode res = CURLE_OK;
-	FILE *f = fopen("search~.txt", "wb");
-
-//	snprintf(cmd, 99, "SEARCH UID X-GM-RAW \"%s\"", gmail_filter);
-	snprintf(cmd, 99, "UID SEARCH UID 4000:*");
-
-	curl_easy_setopt(curl, CURLOPT_URL, cfg.imap.url);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
-	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, cmd);
-	curl_easy_setopt(curl, CURLOPT_VERBOSE, verbose);
-
-	res = curl_easy_perform(curl);
-
-	if (res != CURLE_OK)
-		logfatal("curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
-
-	fclose(f);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, fnull);
-}
-
-static void
-get_uids(const char *fname)
-{
-	char tmp_fname[PATH_MAX];
-	char cmd[100];
-	CURLcode res = CURLE_OK;
-
-	logi("loading uids into %s", fname);
-	snprintf(tmp_fname, PATH_MAX-1, "%s.tmp", fname);
-
-	FILE *f = fopen(tmp_fname, "wt");
-	if (f == NULL)
-		logfatal("cannot open file %s", tmp_fname);
-
-	int start = 1;
-	int count = 100;
-
-	curl_easy_setopt(curl, CURLOPT_URL, cfg.imap.url);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
-	curl_easy_setopt(curl, CURLOPT_VERBOSE, verbose);
-
-	while (1) {
-		snprintf(cmd, 99, "UID FETCH %d:%d (UID)", start, start + count - 1);
-		curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, cmd);
-		long pos1 = ftell(f);
-		res = curl_easy_perform(curl);
-		if (res != CURLE_OK)
-			logfatal("curl: %s\n", curl_easy_strerror(res));
-		start += count;
-		long pos2 = ftell(f);
-		if (pos2 - pos1 < 12)
-			break;
-	}
-
-	fclose(f);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, fnull);
-	rename(tmp_fname, fname);
-	logi("%s saved", fname);
-}
-
-static void
-fetch(int seqnum, int uid)
-{
-	CURLcode res = CURLE_OK;
-	char url[100];
-	char fname[PATH_MAX];
-
-	snprintf(fname, PATH_MAX-1, "%s/fetch-%d~.txt", cfg.local_dir, uid);
-
-	if (exists(fname)) {
-		logi("fetched already: %" PRIu64, uid);
-		return;
-	}
-
-	FILE *f = fopen(fname, "wb");
-	if (f == NULL)
-		logfatal("cannot open output file");
-
-	curl_easy_setopt(curl, CURLOPT_URL, url);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
-	curl_easy_setopt(curl, CURLOPT_VERBOSE, verbose);
-
-	snprintf(url, 99, "%s;UID=%d", cfg.imap.url, seqnum);
-	curl_easy_setopt(curl, CURLOPT_URL, url);
-
-	res = curl_easy_perform(curl);
-
-	if (res != CURLE_OK)
-		logfatal("curl: %s\n", curl_easy_strerror(res));
-
-	fclose(f);
-	logi("fetched: %" PRIu64, uid);
-}
-
-static void
-delete(uint64_t uid)
-{
-	CURLcode res = CURLE_OK;
-	char cmd[100];
-
-	curl_easy_setopt(curl, CURLOPT_URL, cfg.imap.url);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, fnull);
-	curl_easy_setopt(curl, CURLOPT_VERBOSE, verbose);
-
-	sprintf(cmd, "STORE %" PRIu64 " +Flags \\Deleted", uid);
-	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, cmd);
-	
-	res = curl_easy_perform(curl);
-
-	if (res != CURLE_OK)
-		logfatal("curl: %s\n", curl_easy_strerror(res));
-}
-
-static void
-load_found_ids(const char *fname, int **seqnums, int **uids, int *count)
-{
-	FILE *f = fopen(fname, "rt");
-	if (f == NULL)
-		logfatal("cannot open file %s", fname);
-
-	int seqnum = 0;
-	int uid = 0;
-	int cnt = 0;
-	int cap = 100;
-	int *arr1 = calloc(cap, sizeof(int));
-	int *arr2 = calloc(cap, sizeof(int));
-	char s[100];
-
-	while (!feof(f)) {
-		char *p = fgets(s, 99, f);
-		if (p == NULL)
-			break;
-
-		int ret = sscanf(s, "* %d FETCH (UID %d)", &seqnum, &uid);
-		if (ret != 2)
-			logfatal(1, "invalid file %s", fname);
-
-		if (seqnum == 0 || uid == 0)
-			logfatal(1, "invalid seqnum or uid %s", fname);
-
-		if (cnt >= cap) {
-			cap += 100;
-			arr1 = realloc(arr1, cap * sizeof(int));
-			arr2 = realloc(arr2, cap * sizeof(int));
-		}
-		arr1[cnt] = seqnum;
-		arr2[cnt] = uid;
-		cnt++;
-	}
-
-	*seqnums = arr1;
-	*uids = arr2;
-	*count = cnt;
-
-	fclose(f);
-}
-
-static int
-delete_found_uids()
-{
-	CURLcode res = CURLE_OK;
-	uint64_t uid = 0;
-	int count = 0;
-
-	FILE *f = fopen("search~.txt", "rt");
-	int ret = fscanf(f, "* SEARCH %llu", &uid);
-	if (ret != 1)
-		return 0;
-
-	while (uid > 0) {
-		delete(uid);
-		count++;
-		logi("deleted: %d, %" PRIu64, count, uid);
-		int ret = fscanf(f, "%llu", &uid);
-		if (ret != 1 || count >= 1000)
-			break;
-	}
-	fclose(f);
-
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, fnull);
-	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "EXPUNGE");
-	curl_easy_setopt(curl, CURLOPT_VERBOSE, verbose);
-
-	res = curl_easy_perform(curl);
-	if (res != CURLE_OK)
-		logfatal("curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
-
-	return count;
-}
-
-static void
-delete_filtered(const struct filter *filter)
-{
-	char gmail_filter[100];
-	char timestamp[20];
-
-	get_timestamp(timestamp, 19, filter->days_before);
-	snprintf(gmail_filter, 99, "before:%s %s", timestamp, filter->gmail_filter);	
-	logi("purging: \"%s\"", gmail_filter);
-
-	search(gmail_filter);
-	int count = delete_found_uids();
-	logi("purged: %d", count);
-}
-
-static void
-purge()
-{
-	for (struct filter *f = cfg.purge_filters; f != NULL; f = f->next) {
-		delete_filtered(f);
-	}
-}
-
-static time_t
-parse_time(const char *tt)
-{
-	struct tm tm = {0};
-
-	char *p = strptime(tt, "%m/%d/%Y %H:%M:%S %p ", &tm);
-	if (p == NULL)
-		return 0;
-
-	time_t t = mktime(&tm);
-
-	if (strcmp(p, "EST") == 0)
-		t += 5 * 3600;
-	else if (strcmp(p, "EDT") == 0)
-		t += 4 * 3600;
-
-	return t;
-}
-
-static void
-format_time(char *ts, size_t len, time_t *t)
-{
-	struct tm *tm = gmtime(t);
-	strftime(ts, len - 1, "%Y-%m-%d %H:%M:%S", tm);
-}
+#include "imap.h"
+#include "util.h"
 
 const char ccc1[] =
 	"A charge of \\(\\$USD\\) ([0-9\\.][0-9\\.]*) "
@@ -389,7 +76,7 @@ add_to_summary(int uid, struct buf *summary)
 			return 1;
 		}
 
-		amount = "gas";
+		amount = "56.44";
 		place = &text[match[1].rm_so];
 		text[match[1].rm_eo] = 0;
 		date = &text[match[2].rm_so];
@@ -410,38 +97,241 @@ add_to_summary(int uid, struct buf *summary)
 	return 0;
 }
 
-static int
-summarize_by_uids(const int *seqnums, const int *uids, int count, struct buf *summary)
+static void
+summarize_messages(const int *seqnums, const int *uids, int count)
 {
-	if (!offline) {
+	if (!cfg.offline) {
 		for (int i = 0; i < count; i++)
-			fetch(seqnums[i], uids[i]);
+			fetch_message(seqnums[i], uids[i]);
 	}
 
+	struct buf summary;
+	buf_init(&summary);
+
 	for (int i = 0; i < count; i++)
-		add_to_summary(uids[i], summary);
+		add_to_summary(uids[i], &summary);
+
+	char summary_fname[PATH_MAX];
+	snprintf(summary_fname, PATH_MAX-1, "%s/summary.txt", cfg.local_dir);
+	FILE *fs = fopen(summary_fname, "wt");
+	if (fs == NULL)
+		logfatal("cannot open file %s", summary_fname);
+	fwrite(summary.s, 1, summary.len, fs);
+	fclose(fs);
+	logi("summary saved: %s", summary_fname);
+}
+
+struct total_row
+{
+	char *name;
+	float sum;
+	int count;
+	char category;
+};
+
+static int
+cmp_total_row(const void *a, const void *b)
+{
+	struct total_row *x = (struct total_row *)a;
+	struct total_row *y = (struct total_row *)b;
+
+	if (x->sum > y->sum)
+		return 1;
+
+	if (x->sum < y->sum)
+		return -1;
 
 	return 0;
 }
 
-static void
-summarize_filter(const struct filter *filter, struct buf *summary)
+struct category
 {
-	char gmail_filter[100];
-	char timestamp[20];
+	const char *vendor_name;
+	char category;
+	const char *label;
+};
 
-	get_timestamp(timestamp, 19, filter->days_before);
-	snprintf(gmail_filter, 99, "before:%s %s", timestamp, filter->gmail_filter);
-	logi("summarizing: \"%s\"", gmail_filter);
+static void
+load_categories()
+{
 
-//	if (!offline)
-//		get_uids(cfg.uids_fname);
+}
 
-	int count = summarize_found_uids(filter, summary);
-	logi("summarized: %d", count);
-	FILE *fs = fopen("summary~.txt", "wt");
-	fwrite(summary->s, 1, summary->len, fs);
-	fclose(fs);
+static void
+trims(char *s)
+{
+	char *p = strrchr(s, '\n');
+	if (p == NULL)
+		return;
+
+	while (isspace(*p))
+		p--;
+
+	p++;
+	*p = 0;
+}
+
+static void
+aggregate_transactions(const char *fname, struct total_row **totals_table, int *count)
+{
+	char s[500], date[30], time[30], name[100];
+	int uid;
+	float amount;
+
+	int ttcount = 0, ttcap = 0;
+	struct total_row *table = NULL;
+
+	FILE *f = fopen(fname, "rt");
+	if (f == NULL)
+		logfatal("cannot open file %s", fname);
+
+	ENTRY item, *found_item;
+	hcreate(500);
+
+	while (!feof(f)) {
+		fgets(s, 499, f);
+		trims(s);
+		int n = sscanf(s, "%s %s %d %f %[^\n]", date, time, &uid, &amount, name);
+		if (n != 5) {
+			logwarn("invalid line: %s", s);
+			continue;
+		}
+
+		if (strcmp(date, "2015-03-01") < 0)
+			continue;
+
+		if (ttcount >= ttcap) {
+			ttcap += 500;
+			table = realloc(table, ttcap * sizeof(struct total_row));
+		}
+
+		// assign group
+/*
+		bool found = false;
+		for (int i = 0; i < group_count; i++) {
+			if (strstr(name, groups[i].name) == name) {
+				strcpy(name, "==");
+				strcat(name, groups[i].group);
+				found = true;
+				break;
+			}
+		}
+*/
+//		if (!found) {
+			//			strcpy(name, "==MISC");
+//		}
+
+		item.key = name;
+		found_item = hsearch(item, FIND);
+		if (found_item != NULL) {
+			struct total_row *tr = &table[(int)found_item->data];
+			tr->sum += amount;
+			tr->count++;
+		} else {
+			struct total_row *tr = &table[ttcount];
+			tr->name = strdup(name);
+			tr->sum = amount;
+			tr->count = 1;
+			item.data = ttcount;
+			item.key = tr->name;
+			hsearch(item, ENTER);
+			ttcount++;
+		}
+	}
+
+	*totals_table = table;
+	*count = ttcount;
+}
+
+static void
+aggregate_singles(struct total_row *totals_table, int ttcount)
+{
+	int singles_idx = -1;
+
+	for (int i = 0; i < ttcount; i++) {
+		struct total_row *tr = &totals_table[i];
+		if (tr->count == 1 && tr->name[0] != '=' && tr->sum < 20) {
+			if (singles_idx == -1) {
+				singles_idx = i;
+				strcpy(tr->name, "==SINGLE");
+			} else {
+				totals_table[singles_idx].count += tr->count;
+				totals_table[singles_idx].sum += tr->sum;
+				tr->sum = 0;
+			}
+		}
+	}
+}
+
+static void
+write_summary_header(FILE *f)
+{
+	fprintf(f,
+		"# This is the summary of your transactions.\n"
+		"# Uncategorized transactions are located at the beginning of the list\n"
+		"# Categorize transactions by adding CATEGORY character after the dot on each line.\n"
+		"# Categories:\n"
+		"# c -- car\n"
+		"# f -- food\n"
+		"# g -- goods\n"
+		"# h -- home\n"
+		"# t -- clothes\n"
+		"# u -- fun\n"
+		"\n\n"
+		"# NAME                 COUNT AMOUNT  CATEGORY\n"
+	);
+}
+
+static void
+create_report()
+{
+	char transactions_fname[PATH_MAX];
+	char summary_fname[PATH_MAX];
+	int unclassified_count = 0;
+
+	snprintf(transactions_fname, PATH_MAX-1, "%s/transactions.txt", cfg.local_dir);
+	snprintf(summary_fname, PATH_MAX-1, "%s/summary.txt", cfg.local_dir);
+
+	FILE *fc = fopen(summary_fname, "wt");
+	if (fc == NULL)
+		logfatal("cannot open file %s", summary_fname);
+
+	write_summary_header(fc);
+
+	struct total_row *totals_table = NULL;
+	int ttcount = 0;
+
+	aggregate_transactions(transactions_fname, &totals_table, &ttcount);
+	if (0) {
+		aggregate_singles(totals_table, ttcount);
+	}
+
+	qsort(totals_table, ttcount, sizeof(struct total_row), cmp_total_row);
+
+	for (int i = 0; i < ttcount; i++) {
+		struct total_row *tr = &totals_table[i];
+		if (tr->sum > 0) {
+			printf("  %-24s %3d  %5.0f\n", tr->name, tr->count, tr->sum);
+			if (tr->name[0] != '=') {
+				fprintf(fc, "%-24s %3d  %5.0f        .\n", tr->name, tr->count, tr->sum);
+				unclassified_count++;
+			}
+		}
+	}
+
+	fclose(fc);
+	printf("%d unclassified saved to summary: %s.\n"
+	       "Run 'mailbot -e' to edit summary file\n",
+		unclassified_count, summary_fname);
+}
+
+static void
+edit_unclassified()
+{
+	char cmd[PATH_MAX];
+
+	snprintf(cmd, PATH_MAX-1, "edit %s/unclassified.txt", cfg.local_dir);
+	system(cmd);
 }
 
 int main(int argc, char **argv)
@@ -451,47 +341,39 @@ int main(int argc, char **argv)
 
 	log_open(cfg.log_fname);
 
+	if (cfg.classify) {
+		edit_unclassified();
+		return 0;
+	}
+
 	logi("processing for mailbox: %s, user: %s", cfg.imap.url, cfg.imap.login);
 
 	setenv("TZ", "UTC", 1);
 	tzset();
 
-	offline = false;
+	cfg.offline = 1;
+//	cfg.verbose = 1;
+	cfg.report = 0;
 
-	init_curl();
+	init_imap_client();
 
-//	if (!offline)
-//		get_uids(cfg.uids_fname);
+	purge();
+
+	if (!cfg.offline)
+		fetch_uids(cfg.uids_fname);
 
 	int *uids = NULL;
 	int *seqnums = NULL;
 	int count = 0;
-	struct buf summary;
 
-	load_found_ids(cfg.uids_fname, &seqnums, &uids, &count);
+	load_ids(cfg.uids_fname, &seqnums, &uids, &count);
 
-	buf_init(&summary);
+	if (cfg.report) {
+		summarize_messages(seqnums, uids, count);
+		create_report();
+	}
 
-	summarize_by_uids(seqnums, uids, count, &summary);
-
-	char summary_fname[PATH_MAX];
-	snprintf(summary_fname, PATH_MAX-1, "%s/summary.txt", cfg.local_dir);
-	FILE *fs = fopen(summary_fname, "wt");
-	fwrite(summary.s, 1, summary.len, fs);
-	fclose(fs);
-	logi("summary saved: %s", summary_fname);
-
-	struct message m = {
-		.to = cfg.imap.login,
-		.subject = "summary",
-		.from = "mailbot",
-		.body = summary.s
-	};
-
-//	send_email(&m, cfg.imap.password);
-//	purge();
-
-	curl_easy_cleanup(curl);
+	close_imap_client();
 	logi("done");
 	log_close();
 

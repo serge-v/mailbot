@@ -1,7 +1,7 @@
 struct filter
 {
 	int days_before;          /* Apply to messages older than (now - days_before) */
-	const char *gmail_filter; /* Gmail X-GM-RAW filter format (Google imap extension) */
+	const char *filter;
 	const char *parser_name;
 	struct filter *next;
 };
@@ -14,6 +14,11 @@ struct config
 	char *local_dir;         /* mailbox local storage dir ~/.local/mailbot/<name> */
 	char *uids_fname;        /* file with found uids for a mailbox */
 	int debug;
+	int verbose;
+	int offline;
+	int report;              /* create summary and report */
+	int classify;            /* run editor to classify transactions */
+	int list_configs;        /* list available configs in .config/mailbot */
 
 	struct
 	{

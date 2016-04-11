@@ -1,1 +1,8 @@
-usage
+usage: mailbot [OPTIONS]
+options:
+  -c    config path
+  -d    debug trace
+  -g    print config and defaults
+  -e    classify mail
+  -v    print version
+  -l    list available configs

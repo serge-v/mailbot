@@ -4,7 +4,7 @@
 
 int main()
 {
-	FILE *f = fopen("transactions~.csv", "rt");
+	FILE *f = fopen("", "rt");
 	if (f == NULL)
 		err(1, "cannot open transactions csv file");
 	

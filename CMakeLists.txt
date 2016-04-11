@@ -24,8 +24,10 @@ generate_resources("${RESOURCES}" GENERATED)
 add_executable(
 	mailbot
 	mailbot.c
-	conf.c
-	version.c
+	conf.c conf.h
+	version.c version.h
+	util.c util.h
+	imap.c imap.h
 	${GENERATED}
 )
 

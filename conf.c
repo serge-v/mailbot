@@ -27,7 +27,7 @@ add_filter(struct filter *list, char* f)
 	struct filter *fn = calloc(1, sizeof(struct filter));
 
 	fn->days_before = days;
-	fn->gmail_filter = strdup(s);
+	fn->filter = strdup(s);
 	fn->next = list;
 	list = fn;
 
@@ -119,46 +119,14 @@ ensure_local_dir()
 	ensure_dir(path);
 }
 
-int
-config_init(int argc, char **argv)
+static void
+parse_ini_file()
 {
-	FILE *f;
 	char *ptr, s[200], *key, *value;
 	enum section curr_section = SECTION_NONE;
-	int ch, line = 0;
-	bool show_config = false;
+	int line = 0;
+	FILE *f = fopen(cfg.config_fname, "rt");
 
-	while ((ch = getopt(argc, argv, "dhvgc:s")) != -1) {
-		switch (ch) {
-		case 'c':
-			cfg.config_fname = strdup(optarg);
-			break;
-		case 'd':
-			cfg.debug = 1;
-			break;
-		case 'g':
-			show_config = true;
-			break;
-		case 'v':
-			printf("version: %s\n", app_version);
-			printf("date:    %s\n", app_date);
-			exit(0);
-		case 'h':
-			puts(usage_txt);
-			return 1;
-		default:
-			puts(synopsis_txt);
-			exit(1);
-		}
-	}
-
-	if (cfg.config_fname == NULL) {
-		if (show_config)
-			config_dump();
-		errx(1, "no config file specified");
-	}
-
-	f = fopen(cfg.config_fname, "rt");
 	if (f == NULL)
 		err(1, "cannot open %s", cfg.config_fname);
 
@@ -166,7 +134,7 @@ config_init(int argc, char **argv)
 		ptr = fgets(s, 200, f);
 		if (ptr == NULL)
 			break;
-		
+
 		line++;
 		s[strlen(s) - 1] = 0; /* trim EOL */
 
@@ -210,6 +178,58 @@ config_init(int argc, char **argv)
 	fclose(f);
 	cfg.purge_filters = reverse_filter(cfg.purge_filters);
 	cfg.summarize_filters = reverse_filter(cfg.summarize_filters);
+}
+
+int
+config_init(int argc, char **argv)
+{
+	int ch;
+	bool show_config = false;
+
+	while ((ch = getopt(argc, argv, "dhvgc:sel")) != -1) {
+		switch (ch) {
+		case 'c':
+			cfg.config_fname = strdup(optarg);
+			break;
+		case 'd':
+			cfg.debug = 1;
+			break;
+		case 'g':
+			show_config = true;
+			break;
+		case 'l':
+			cfg.list_configs = true;
+			break;
+		case 'e':
+			cfg.classify = true;
+			break;
+		case 'v':
+			printf("version: %s\n", app_version);
+			printf("date:    %s\n", app_date);
+			exit(0);
+		case 'h':
+			puts(usage_txt);
+			return 1;
+		default:
+			puts(synopsis_txt);
+			exit(1);
+		}
+	}
+
+	if (cfg.list_configs) {
+		char cmd[500];
+		snprintf(cmd, 499, "ls -1 %s/.config/mailbot/*.ini", getenv("HOME"));
+		system(cmd);
+		exit(0);
+	}
+
+	if (cfg.config_fname == NULL) {
+		if (show_config)
+			config_dump();
+		errx(1, "no config file specified");
+	}
+
+	parse_ini_file();
 
 	const char *start = strrchr(cfg.config_fname, '/');
 	if (start == NULL)
@@ -232,7 +252,7 @@ config_init(int argc, char **argv)
 
 	if (show_config) {
 		config_dump();
-		exit(1);
+		exit(0);
 	}
 
 	return 0;
@@ -265,12 +285,12 @@ config_dump()
 
 	printf("\n[purge]\n");
 	for (struct filter *f = cfg.purge_filters; f != NULL; f = f->next) {
-		printf("filter = %d,%s\n", f->days_before, f->gmail_filter);
+		printf("filter = %d,%s\n", f->days_before, f->filter);
 	}
 
 	printf("\n[summarize]\n");
 	for (struct filter *f = cfg.summarize_filters; f != NULL; f = f->next) {
-		printf("filter = %d,%s\n", f->days_before, f->gmail_filter);
+		printf("filter = %d,%s\n", f->days_before, f->filter);
 	}
 }
 

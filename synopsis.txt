@@ -1,1 +1,1 @@
-synopsis
+mailbotx [-c FILE|-l] [-dgivh]
