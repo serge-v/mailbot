@@ -1,1 +1,1 @@
-mailbotx [-c FILE|-l] [-dgivh]
+usage: mailbot  [ -dgivh ] [ -l | NAME | -c FILE ]

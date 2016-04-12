@@ -1,8 +1,9 @@
-usage: mailbot [OPTIONS]
+usage: mailbot [ -dgev ] [ -l | NAME | -c FILE ]
 options:
-  -c    config path
-  -d    debug trace
-  -g    print config and defaults
-  -e    classify mail
-  -v    print version
-  -l    list available configs
+  -l        list available configs
+  NAME      specify config name
+  -c FILE   specify config path
+  -d        debug trace
+  -g        print config and defaults
+  -e        classify mail
+  -v        print version

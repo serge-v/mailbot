@@ -8,17 +8,18 @@ struct filter
 
 struct config
 {
-	const char *config_fname;
-	char *name;              /* ini base name without extension */
-	char *log_fname;         /* log file name in ~/.local dir */
-	char *local_dir;         /* mailbox local storage dir ~/.local/mailbot/<name> */
-	char *uids_fname;        /* file with found uids for a mailbox */
+	char *config_dir;         /* default config dir: ~/.config/mailbot */
+	char *config_fname;       /* config file name */
+	char *name;               /* ini base name without extension */
+	char *log_fname;          /* log file name in ~/.local dir */
+	char *local_dir;          /* mailbox local storage dir ~/.local/mailbot/<name> */
+	char *uids_fname;         /* file with found uids for a mailbox */
 	int debug;
 	int verbose;
 	int offline;
-	int report;              /* create summary and report */
-	int classify;            /* run editor to classify transactions */
-	int list_configs;        /* list available configs in .config/mailbot */
+	int report;               /* create summary and report */
+	int classify;             /* run editor to classify transactions */
+	int list_configs;         /* list available configs in .config/mailbot */
 
 	struct
 	{

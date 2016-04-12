@@ -152,12 +152,6 @@ struct category
 };
 
 static void
-load_categories()
-{
-
-}
-
-static void
 trims(char *s)
 {
 	char *p = strrchr(s, '\n');

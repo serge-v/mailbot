@@ -7,6 +7,7 @@
 #include <getopt.h>
 #include <limits.h>
 #include <sys/stat.h>
+#include <dirent.h>
 #include "usage.txt.h"
 #include "synopsis.txt.h"
 #include "version.h"
@@ -180,74 +181,116 @@ parse_ini_file()
 	cfg.summarize_filters = reverse_filter(cfg.summarize_filters);
 }
 
+static void
+list_available_configs()
+{
+	DIR *dir = opendir(cfg.config_dir);
+	if (dir == NULL)
+		err(1, "cannot open dir %s", cfg.config_dir);
+
+	printf("Available configs:\n");
+
+	struct dirent *entry = readdir(dir);
+
+	while (entry != NULL) {
+		if (strstr(entry->d_name, ".ini") != NULL) {
+			printf("%.*s\n", (int)(strlen(entry->d_name) - 4), entry->d_name);
+		}
+		entry = readdir(dir);
+	}
+
+	closedir(dir);
+}
+
 int
 config_init(int argc, char **argv)
 {
 	int ch;
 	bool show_config = false;
 
-	while ((ch = getopt(argc, argv, "dhvgc:sel")) != -1) {
-		switch (ch) {
-		case 'c':
-			cfg.config_fname = strdup(optarg);
-			break;
-		case 'd':
-			cfg.debug = 1;
-			break;
-		case 'g':
-			show_config = true;
-			break;
-		case 'l':
-			cfg.list_configs = true;
-			break;
-		case 'e':
-			cfg.classify = true;
-			break;
-		case 'v':
-			printf("version: %s\n", app_version);
-			printf("date:    %s\n", app_date);
-			exit(0);
-		case 'h':
-			puts(usage_txt);
-			return 1;
-		default:
-			puts(synopsis_txt);
-			exit(1);
+	while (optind < argc) {
+		ch = getopt(argc, argv, "dhvgc:sel");
+		if (ch != -1) {
+			switch (ch) {
+			case 'c':
+				cfg.config_fname = strdup(optarg);
+				break;
+			case 'd':
+				cfg.debug = 1;
+				break;
+			case 'g':
+				show_config = true;
+				break;
+			case 'l':
+				cfg.list_configs = true;
+				break;
+			case 'e':
+				cfg.classify = true;
+				break;
+			case 'v':
+				printf("version: %s\n", app_version);
+				printf("date:    %s\n", app_date);
+				exit(0);
+			case 'h':
+				puts(usage_txt);
+				return 1;
+			default:
+				puts(synopsis_txt);
+				exit(1);
+			}
+		} else {
+			if (cfg.name != NULL) {
+				err(1, "name is already specified");
+			}
+			cfg.name = strdup(argv[optind]);
+			optind++;
 		}
 	}
 
+	const char *home_dir = getenv("HOME");
+	asprintf(&cfg.config_dir, "%s/.config/mailbot", home_dir);
+
 	if (cfg.list_configs) {
-		char cmd[500];
-		snprintf(cmd, 499, "ls -1 %s/.config/mailbot/*.ini", getenv("HOME"));
-		system(cmd);
+		list_available_configs();
 		exit(0);
 	}
 
-	if (cfg.config_fname == NULL) {
+	if (cfg.config_fname == NULL && cfg.name == NULL) {
 		if (show_config)
 			config_dump();
-		errx(1, "no config file specified");
+		errx(1, "no config file path or name specified");
+	}
+
+	if (cfg.config_fname != NULL && cfg.name != NULL) {
+		if (show_config)
+			config_dump();
+		errx(1, "either -c FILE or NAME should be specified");
+	}
+
+	asprintf(&cfg.local_dir, "%s/.local/mailbot/%s", home_dir, cfg.name);
+	asprintf(&cfg.log_fname, "%s/.local/mailbot/mailbot.log", home_dir);
+	asprintf(&cfg.uids_fname, "%s/uids.txt", cfg.local_dir);
+
+	if (cfg.config_fname != NULL) {
+		const char *start = strrchr(cfg.config_fname, '/');
+		if (start == NULL)
+			start = cfg.config_fname;
+
+		const char *end = strrchr(cfg.config_fname, '.');
+		if (end == NULL)
+			end = cfg.config_fname + strlen(cfg.config_fname);
+
+		if (end <= start)
+			errx(1, "invalid config file name");
+
+		int len = end - start - 1;
+
+		asprintf(&cfg.name, "%.*s", len, start + 1);
+	} else {
+		asprintf(&cfg.config_fname, "%s/%s.ini", cfg.config_dir, cfg.name);
 	}
 
 	parse_ini_file();
-
-	const char *start = strrchr(cfg.config_fname, '/');
-	if (start == NULL)
-		start = cfg.config_fname;
-
-	const char *end = strrchr(cfg.config_fname, '.');
-	if (end == NULL)
-		end = cfg.config_fname + strlen(cfg.config_fname);
-
-	if (end <= start)
-		errx(1, "invalid config file name");
-
-	int len = end - start - 1;
-	asprintf(&cfg.name, "%.*s", len, start + 1);
-	asprintf(&cfg.local_dir, "%s/.local/mailbot/%s", getenv("HOME"), cfg.name);
-	asprintf(&cfg.log_fname, "%s/.local/mailbot/mailbot.log", getenv("HOME"));
-	asprintf(&cfg.uids_fname, "%s/uids.txt", cfg.local_dir);
-
 	ensure_local_dir();
 
 	if (show_config) {
@@ -297,6 +340,17 @@ config_dump()
 void
 config_free()
 {
+	if (cfg.config_dir != NULL)
+		free(cfg.config_dir);
+	if (cfg.config_fname != NULL)
+		free(cfg.config_fname);
+	if (cfg.local_dir != NULL)
+		free(cfg.local_dir);
+	if (cfg.log_fname != NULL)
+		free(cfg.log_fname);
+	if (cfg.name != NULL)
+		free(cfg.name);
+	// TODO: clean filters
 }
 
 

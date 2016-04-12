@@ -198,9 +198,9 @@ delete_messages(int *seqnums, int count)
 				logfatal("curl: %s", curl_easy_strerror(res));
 
 			logi("expunge after %d [seq=%d]", i, seqnums[i]);
-			getchar();
 		}
 	}
+	logi("total %d deleted", count);
 }
 
 void
