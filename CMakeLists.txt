@@ -37,22 +37,4 @@ target_link_libraries(
 	svc
 )
 
-list(APPEND CURLTEST_SRC
-#	curltest/imap-append.c
-	curltest/imap-copy.c
-#	curltest/imap-create.c
-#	curltest/imap-delete.c
-#	curltest/imap-examine.c
-#	curltest/imap-fetch.c
-#	curltest/imap-list.c
-#	curltest/imap-lsub.c
-#	curltest/imap-multi.c
-#	curltest/imap-noop.c
-#	curltest/imap-search.c
-#	curltest/imap-ssl.c
-#	curltest/imap-store.c
-#	curltest/imap-tls.c
-)
-
-add_executable(curltest	${CURLTEST_SRC})
-target_link_libraries(curltest ${curl_LIBRARY} svc)
+install(TARGETS mailbot RUNTIME DESTINATION bin)

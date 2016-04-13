@@ -226,7 +226,7 @@ aggregate_transactions(const char *fname, struct total_row **totals_table, int *
 			tr->name = strdup(name);
 			tr->sum = amount;
 			tr->count = 1;
-			item.data = ttcount;
+			item.data = (void*)(uint64_t)ttcount;
 			item.key = tr->name;
 			hsearch(item, ENTER);
 			ttcount++;
