@@ -339,7 +339,8 @@ config_dump()
 		printf("filter = %d,%s\n", f->days_before, f->filter);
 	}
 
-	printf("\n[summarize]\n");
+	printf("\n[summarize]\n"
+	       "report = %d\n", cfg.report);
 	for (struct filter *f = cfg.summarize_filters; f != NULL; f = f->next) {
 		printf("filter = %d,%s\n", f->days_before, f->filter);
 	}
