@@ -1,1 +1,1 @@
-usage: mailbot  [ -dgivh ] [ -l | NAME | -c FILE ]
+usage: mailbot  [ -dgivhoz ] [ -l | NAME | -c FILE ]

@@ -291,7 +291,12 @@ delete_found()
 		logfatal("cannot open file %s", fname);
 
 
-	size_t was_read = fread(magic, 1, 9, f);
+	size_t was_read = fread(magic, 1, 10, f);
+
+	if (was_read != 10 && strncmp("* SEARCH\r\n", magic, 10) == 0) {
+		fclose(f);
+		return;
+	}
 
 	if (was_read != 9 && strncmp("* SEARCH ", magic, 9) != 0)
 		logfatal("invalid search results: %s", fname);

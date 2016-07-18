@@ -166,7 +166,9 @@ parse_ini_file()
 				errx(1, "%s:%d: error: unknown parameter: %s", cfg.config_fname, line, s);
 			}
 		} else if (curr_section == SECTION_SUMMARIZE_FILTERS) {
-			if (strcmp("filter", key) == 0) {
+			if (strcmp("report", key) == 0) {
+				cfg.report = atoi(value);
+			} else if (strcmp("filter", key) == 0) {
 				cfg.summarize_filters = add_filter(cfg.summarize_filters, value);
 			} else {
 				errx(1, "%s:%d: error: unknown parameter: %s", cfg.config_fname, line, s);
@@ -209,7 +211,7 @@ config_init(int argc, char **argv)
 	bool show_config = false;
 
 	while (optind < argc) {
-		ch = getopt(argc, argv, "dhvgc:sel");
+		ch = getopt(argc, argv, "dhvgc:seloz");
 		if (ch != -1) {
 			switch (ch) {
 			case 'c':
@@ -223,6 +225,12 @@ config_init(int argc, char **argv)
 				break;
 			case 'l':
 				cfg.list_configs = true;
+				break;
+			case 'o':
+				cfg.offline = true;
+				break;
+			case 'z':
+				cfg.verbose = true;
 				break;
 			case 'e':
 				cfg.classify = true;

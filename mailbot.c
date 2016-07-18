@@ -32,31 +32,37 @@ const char ccc2[] =
 	"([0-9][0-9]/[0-9][0-9]/20[0-9][0-9] [0-9][0-9]*:[0-9][0-9]:[0-9][0-9] [AP]M [A-Z]{3}).";
 
 static int
-add_to_summary(int uid, struct buf *summary)
+add_to_tranlist(int uid, struct buf *tranlist)
 {
 	char fname[PATH_MAX];
 	char text[100000];
 	char ts[50];
 	char *amount, *place, *date;
 
-	snprintf(fname, PATH_MAX-1, "%s/fetch-%d~.txt", cfg.local_dir, uid);
+	snprintf(fname, PATH_MAX-1, "%s/fetch-%d~.txt.edited", cfg.local_dir, uid);
 	if (!exists(fname)) {
-		logwarn("file %s not found", fname);
-		buf_appendf(summary, "%24s %6d      message is not found\n", "", uid);
-//		logfatal("cannot found file %s for message uid %d", fname, uid);
-		return 1;
+		snprintf(fname, PATH_MAX-1, "%s/fetch-%d~.txt", cfg.local_dir, uid);
+		if (!exists(fname)) {
+			fprintf(stderr, "%s: not found\n", fname);
+			logwarn("file %s not found", fname);
+			buf_appendf(tranlist, "%24s %6d      message is not found\n", "", uid);
+			return 1;
+		}
 	}
 
 	FILE *f = fopen(fname, "rt");
-	if (f == NULL)
+	if (f == NULL) {
+		fprintf(stderr, "%s: cannot open\n", fname);
 		logfatal("cannot open %s", fname);
+	}
 
 	size_t was_read = fread(text, 1, 100000-1, f);
 	fclose(f);
 
 	if (was_read == 0) {
+		fprintf(stderr, "%s: file is empty\n", fname);
 		logwarn("file %s is empty", fname);
-		buf_appendf(summary, "%24s %6d      empty\n", "", uid);
+		buf_appendf(tranlist, "%24s %6d      empty\n", "", uid);
 		return 1;
 	}
 
@@ -72,7 +78,8 @@ add_to_summary(int uid, struct buf *summary)
 		regex_compile(&rex, ccc2);
 		rc = regexec(&rex, text, 10, match, 0);
 		if (rc == REG_NOMATCH) {
-			buf_appendf(summary, "%24s %6d      no match\n", "", uid);
+			fprintf(stderr, "%s: no match\n", fname);
+			buf_appendf(tranlist, "%24s %6d      no match\n", "", uid);
 			return 1;
 		}
 
@@ -92,33 +99,33 @@ add_to_summary(int uid, struct buf *summary)
 
 	time_t t = parse_time(date);
 	format_time(ts, 49, &t);
-	buf_appendf(summary, "%-24s %6d    %6s  %-60s\n", ts, uid, amount, place);
+	buf_appendf(tranlist, "%-24s %6d    %6s  %-60s\n", ts, uid, amount, place);
 
 	return 0;
 }
 
 static void
-summarize_messages(const int *seqnums, const int *uids, int count)
+extract_transactions(const int *seqnums, const int *uids, int count)
 {
 	if (!cfg.offline) {
 		for (int i = 0; i < count; i++)
 			fetch_message(seqnums[i], uids[i]);
 	}
 
-	struct buf summary;
-	buf_init(&summary);
+	struct buf tranlist;
+	buf_init(&tranlist);
 
 	for (int i = 0; i < count; i++)
-		add_to_summary(uids[i], &summary);
+		add_to_tranlist(uids[i], &tranlist);
 
-	char summary_fname[PATH_MAX];
-	snprintf(summary_fname, PATH_MAX-1, "%s/summary.txt", cfg.local_dir);
-	FILE *fs = fopen(summary_fname, "wt");
+	char tranlist_fname[PATH_MAX];
+	snprintf(tranlist_fname, PATH_MAX-1, "%s/transactions.txt", cfg.local_dir);
+	FILE *fs = fopen(tranlist_fname, "wt");
 	if (fs == NULL)
-		logfatal("cannot open file %s", summary_fname);
-	fwrite(summary.s, 1, summary.len, fs);
+		logfatal("cannot open file %s", tranlist_fname);
+	fwrite(tranlist.s, 1, tranlist.len, fs);
 	fclose(fs);
-	logi("summary saved: %s", summary_fname);
+	logi("summary saved: %s", tranlist_fname);
 }
 
 struct total_row
@@ -191,7 +198,7 @@ aggregate_transactions(const char *fname, struct total_row **totals_table, int *
 			continue;
 		}
 
-		if (strcmp(date, "2015-03-01") < 0)
+		if (strcmp(date, "2016-01-01") < 0)
 			continue;
 
 		if (ttcount >= ttcap) {
@@ -280,15 +287,15 @@ static void
 create_report()
 {
 	char transactions_fname[PATH_MAX];
-	char summary_fname[PATH_MAX];
+	char unclassified_fname[PATH_MAX];
 	int unclassified_count = 0;
 
 	snprintf(transactions_fname, PATH_MAX-1, "%s/transactions.txt", cfg.local_dir);
-	snprintf(summary_fname, PATH_MAX-1, "%s/summary.txt", cfg.local_dir);
+	snprintf(unclassified_fname, PATH_MAX-1, "%s/unclassified.txt", cfg.local_dir);
 
-	FILE *fc = fopen(summary_fname, "wt");
+	FILE *fc = fopen(unclassified_fname, "wt");
 	if (fc == NULL)
-		logfatal("cannot open file %s", summary_fname);
+		logfatal("cannot open file %s", unclassified_fname);
 
 	write_summary_header(fc);
 
@@ -314,9 +321,9 @@ create_report()
 	}
 
 	fclose(fc);
-	printf("%d unclassified saved to summary: %s.\n"
-	       "Run 'mailbot -e' to edit summary file\n",
-		unclassified_count, summary_fname);
+	printf("%d unclassified saved to: %s.\n"
+	       "Run 'mailbot -e' to edit file\n",
+		unclassified_count, unclassified_fname);
 }
 
 static void
@@ -345,25 +352,19 @@ int main(int argc, char **argv)
 	setenv("TZ", "UTC", 1);
 	tzset();
 
-	cfg.offline = 1;
-//	cfg.verbose = 1;
-	cfg.report = 0;
-
-	init_imap_client();
-
-	purge();
-
-	if (!cfg.offline)
+	if (!cfg.offline) {
+		init_imap_client();
+		purge();
 		fetch_uids(cfg.uids_fname);
+	}
 
 	int *uids = NULL;
 	int *seqnums = NULL;
 	int count = 0;
 
-	load_ids(cfg.uids_fname, &seqnums, &uids, &count);
-
 	if (cfg.report) {
-		summarize_messages(seqnums, uids, count);
+		load_ids(cfg.uids_fname, &seqnums, &uids, &count);
+		extract_transactions(seqnums, uids, count);
 		create_report();
 	}
 

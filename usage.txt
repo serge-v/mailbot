@@ -7,3 +7,5 @@ options:
   -g        print config and defaults
   -e        classify mail
   -v        print version
+  -z        verbose ourput
+  -o        offline mode
