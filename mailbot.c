@@ -312,7 +312,8 @@ create_report()
 	for (int i = 0; i < ttcount; i++) {
 		struct total_row *tr = &totals_table[i];
 		if (tr->sum > 0) {
-			printf("  %-24s %3d  %5.0f\n", tr->name, tr->count, tr->sum);
+			if (cfg.verbose)
+				printf("  %-24s %3d  %5.0f\n", tr->name, tr->count, tr->sum);
 			if (tr->name[0] != '=') {
 				fprintf(fc, "%-24s %3d  %5.0f        .\n", tr->name, tr->count, tr->sum);
 				unclassified_count++;
