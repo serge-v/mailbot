@@ -293,7 +293,7 @@ delete_found()
 
 	size_t was_read = fread(magic, 1, 10, f);
 
-	if (was_read != 10 && strncmp("* SEARCH\r\n", magic, 10) == 0) {
+	if (was_read == 10 && strncmp("* SEARCH\r\n", magic, 10) == 0) {
 		fclose(f);
 		return;
 	}

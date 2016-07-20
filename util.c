@@ -20,6 +20,19 @@ parse_time(const char *tt)
 	return t;
 }
 
+time_t
+parse_date(const char *tt)
+{
+	struct tm tm = {0};
+
+	char *p = strptime(tt, "%m/%d/%Y", &tm);
+	if (p == NULL)
+		return 0;
+
+	time_t t = mktime(&tm);
+	return t;
+}
+
 void
 format_time(char *ts, size_t len, time_t *t)
 {

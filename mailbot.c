@@ -206,22 +206,6 @@ aggregate_transactions(const char *fname, struct total_row **totals_table, int *
 			table = realloc(table, ttcap * sizeof(struct total_row));
 		}
 
-		// assign group
-/*
-		bool found = false;
-		for (int i = 0; i < group_count; i++) {
-			if (strstr(name, groups[i].name) == name) {
-				strcpy(name, "==");
-				strcat(name, groups[i].group);
-				found = true;
-				break;
-			}
-		}
-*/
-//		if (!found) {
-			//			strcpy(name, "==MISC");
-//		}
-
 		item.key = name;
 		found_item = hsearch(item, FIND);
 		if (found_item != NULL) {
@@ -245,45 +229,6 @@ aggregate_transactions(const char *fname, struct total_row **totals_table, int *
 }
 
 static void
-aggregate_singles(struct total_row *totals_table, int ttcount)
-{
-	int singles_idx = -1;
-
-	for (int i = 0; i < ttcount; i++) {
-		struct total_row *tr = &totals_table[i];
-		if (tr->count == 1 && tr->name[0] != '=' && tr->sum < 20) {
-			if (singles_idx == -1) {
-				singles_idx = i;
-				strcpy(tr->name, "==SINGLE");
-			} else {
-				totals_table[singles_idx].count += tr->count;
-				totals_table[singles_idx].sum += tr->sum;
-				tr->sum = 0;
-			}
-		}
-	}
-}
-
-static void
-write_summary_header(FILE *f)
-{
-	fprintf(f,
-		"# This is the summary of your transactions.\n"
-		"# Uncategorized transactions are located at the beginning of the list\n"
-		"# Categorize transactions by adding CATEGORY character after the dot on each line.\n"
-		"# Categories:\n"
-		"# c -- car\n"
-		"# f -- food\n"
-		"# g -- goods\n"
-		"# h -- home\n"
-		"# t -- clothes\n"
-		"# u -- fun\n"
-		"\n\n"
-		"# NAME                 COUNT AMOUNT  CATEGORY\n"
-	);
-}
-
-static void
 create_report()
 {
 	char transactions_fname[PATH_MAX];
@@ -297,15 +242,10 @@ create_report()
 	if (fc == NULL)
 		logfatal("cannot open file %s", unclassified_fname);
 
-	write_summary_header(fc);
-
 	struct total_row *totals_table = NULL;
 	int ttcount = 0;
 
 	aggregate_transactions(transactions_fname, &totals_table, &ttcount);
-	if (0) {
-		aggregate_singles(totals_table, ttcount);
-	}
 
 	qsort(totals_table, ttcount, sizeof(struct total_row), cmp_total_row);
 
