@@ -17,8 +17,6 @@ struct config
 	int debug;
 	int verbose;
 	int offline;
-	int report;               /* create summary and report */
-	int classify;             /* run editor to classify transactions */
 	int list_configs;         /* list available configs in .config/mailbot */
 
 	struct

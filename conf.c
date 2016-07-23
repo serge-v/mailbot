@@ -56,7 +56,7 @@ enum section
 	SECTION_NONE,
 	SECTION_IMAP,
 	SECTION_PURGE_FILTERS,
-	SECTION_SUMMARIZE_FILTERS
+	SECTION_FETCH_FILTERS
 };
 
 static enum section
@@ -66,8 +66,8 @@ parse_section_name(const char *s)
 		return SECTION_IMAP;
 	else if (strcmp("[purge]", s) == 0)
 		return SECTION_PURGE_FILTERS;
-	else if (strcmp("[summarize]", s) == 0)
-		return SECTION_SUMMARIZE_FILTERS;
+	else if (strcmp("[fetch]", s) == 0)
+		return SECTION_FETCH_FILTERS;
 	else
 		err(1, "invalid section name: %s", s);
 }
@@ -165,10 +165,8 @@ parse_ini_file()
 			} else {
 				errx(1, "%s:%d: error: unknown parameter: %s", cfg.config_fname, line, s);
 			}
-		} else if (curr_section == SECTION_SUMMARIZE_FILTERS) {
-			if (strcmp("report", key) == 0) {
-				cfg.report = atoi(value);
-			} else if (strcmp("filter", key) == 0) {
+		} else if (curr_section == SECTION_FETCH_FILTERS) {
+			if (strcmp("filter", key) == 0) {
 				cfg.summarize_filters = add_filter(cfg.summarize_filters, value);
 			} else {
 				errx(1, "%s:%d: error: unknown parameter: %s", cfg.config_fname, line, s);
@@ -211,7 +209,7 @@ config_init(int argc, char **argv)
 	bool show_config = false;
 
 	while (optind < argc) {
-		ch = getopt(argc, argv, "dhvgc:seloz");
+		ch = getopt(argc, argv, "dhvgc:sloz");
 		if (ch != -1) {
 			switch (ch) {
 			case 'c':
@@ -231,9 +229,6 @@ config_init(int argc, char **argv)
 				break;
 			case 'z':
 				cfg.verbose = true;
-				break;
-			case 'e':
-				cfg.classify = true;
 				break;
 			case 'v':
 				printf("version: %s\n", app_version);
@@ -339,8 +334,7 @@ config_dump()
 		printf("filter = %d,%s\n", f->days_before, f->filter);
 	}
 
-	printf("\n[summarize]\n"
-	       "report = %d\n", cfg.report);
+	printf("\n[summarize]\n");
 	for (struct filter *f = cfg.summarize_filters; f != NULL; f = f->next) {
 		printf("filter = %d,%s\n", f->days_before, f->filter);
 	}
