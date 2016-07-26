@@ -167,7 +167,7 @@ parse_ini_file()
 			}
 		} else if (curr_section == SECTION_FETCH_FILTERS) {
 			if (strcmp("filter", key) == 0) {
-				cfg.summarize_filters = add_filter(cfg.summarize_filters, value);
+				cfg.fetch_filters = add_filter(cfg.fetch_filters, value);
 			} else {
 				errx(1, "%s:%d: error: unknown parameter: %s", cfg.config_fname, line, s);
 			}
@@ -178,7 +178,7 @@ parse_ini_file()
 
 	fclose(f);
 	cfg.purge_filters = reverse_filter(cfg.purge_filters);
-	cfg.summarize_filters = reverse_filter(cfg.summarize_filters);
+	cfg.fetch_filters = reverse_filter(cfg.fetch_filters);
 }
 
 static void
@@ -334,8 +334,8 @@ config_dump()
 		printf("filter = %d,%s\n", f->days_before, f->filter);
 	}
 
-	printf("\n[summarize]\n");
-	for (struct filter *f = cfg.summarize_filters; f != NULL; f = f->next) {
+	printf("\n[fetch]\n");
+	for (struct filter *f = cfg.fetch_filters; f != NULL; f = f->next) {
 		printf("filter = %d,%s\n", f->days_before, f->filter);
 	}
 }

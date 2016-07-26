@@ -27,7 +27,7 @@ struct config
 	} imap;
 	
 	struct filter *purge_filters;
-	struct filter *summarize_filters;
+	struct filter *fetch_filters;
 };
 
 extern struct config cfg;

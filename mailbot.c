@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "common/log.h"
 #include "conf.h"
 #include "imap.h"
